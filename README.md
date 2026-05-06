@@ -71,6 +71,9 @@ curl http://localhost:9090/health
 
 Open the dashboard at **http://localhost:9090/dashboard/**.
 
+<img width="2554" height="1069" alt="image" src="https://github.com/user-attachments/assets/059abe53-a2fa-4df7-b8dd-4b7b09f991ec" />
+
+
 ### Run with Docker Compose
 
 Requires [Docker](https://docs.docker.com/get-docker/) and Ollama running on the host.
