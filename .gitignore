@@ -1,0 +1,19 @@
+# Binary
+rageval
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+
+# Config with local paths (keep config.yaml.example if needed)
+# config.yaml
+
+# OS
+.DS_Store
+
+# Go
+vendor/

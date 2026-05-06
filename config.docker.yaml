@@ -1,0 +1,25 @@
+server:
+  port: 9090
+  logLevel: info  # info | debug
+
+embed:
+  provider: ollama
+  url: http://host.docker.internal:11434
+  model: nomic-embed-text
+  batchSize: 32
+  timeoutSeconds: 30
+
+storage:
+  type: sqlite
+  path: /data/rageval.db
+
+eval:
+  workerCount: 2
+  channelBuffer: 1000
+  sampleRate: 1.0
+  faithfulnessThreshold: 0.75
+  llmJudge:
+    enabled: true
+    url: http://host.docker.internal:11434
+    model: qwen2.5:32b
+    timeoutSeconds: 180

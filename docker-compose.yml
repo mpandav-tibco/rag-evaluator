@@ -1,0 +1,17 @@
+services:
+  rageval:
+    image: ghcr.io/mpandav-tibco/rageval:latest
+    build: .
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config.docker.yaml:/etc/rageval/config.yaml:ro
+      - rageval-data:/data
+    environment:
+      - RAGEVAL_CONFIG=/etc/rageval/config.yaml
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # exposes host to container on Linux; no-op on Mac/Windows
+    restart: unless-stopped
+
+volumes:
+  rageval-data:

@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>RAG Eval Dashboard</title>
+  <style>
+  :root {
+    --bg:       #0d1117;
+    --surface:  #161b22;
+    --border:   #30363d;
+    --text:     #e6edf3;
+    --muted:    #8b949e;
+    --green:    #3fb950;
+    --yellow:   #d29922;
+    --red:      #f85149;
+    --blue:     #58a6ff;
+    --accent:   #7c3aed;
+    --rad:      8px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    min-height: 100vh;
+  }
+
+  /* ── HEADER ── */
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+  .header-logo { font-size: 15px; font-weight: 700; letter-spacing: -.01em; }
+  .header-logo span { color: var(--blue); }
+  .header-logo small { font-size: 11px; font-weight: 400; color: var(--muted); margin-left: 6px; }
+  .sep { width: 1px; height: 20px; background: var(--border); }
+  .col-select {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 160px;
+  }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  .pill-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--green);
+    flex-shrink: 0;
+  }
+  .dot.err { background: var(--red); }
+  .dot.loading { background: var(--yellow); animation: pulse 1s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .btn {
+    background: var(--accent);
+    border: none;
+    color: #fff;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn:hover { opacity: .85; }
+  .btn-danger {
+    background: var(--red);
+    border: none;
+    color: #fff;
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .btn-danger:hover { opacity: .85; }
+
+  /* ── MAIN ── */
+  .main { padding: 24px; max-width: 1440px; margin: 0 auto; }
+
+  /* ── SECTION TITLE ── */
+  .section-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: 12px;
+    margin-top: 28px;
+  }
+  .section-title:first-child { margin-top: 0; }
+
+  /* ── SUMMARY CARDS ── */
+  .cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+    margin-bottom: 4px;
+  }
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--rad);
+    padding: 16px 18px 14px;
+  }
+  .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+  /* info icon + tooltip */
+  .info-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 50%;
+    border: 1px solid var(--border); color: var(--muted);
+    font-size: 9px; font-style: normal; font-weight: 600; line-height: 1;
+    cursor: default; flex-shrink: 0; position: relative; user-select: none;
+    transition: border-color .15s, color .15s;
+  }
+  .info-icon:hover { border-color: var(--blue); color: var(--blue); }
+  .info-icon .tip-box {
+    display: none;
+    position: absolute; top: calc(100% + 7px); right: 0;
+    background: #1c2128; border: 1px solid var(--border); border-radius: 6px;
+    padding: 9px 12px; font-size: 11px; font-weight: 400;
+    text-transform: none; letter-spacing: 0; color: var(--text);
+    width: 240px; line-height: 1.6; z-index: 200;
+    box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    pointer-events: none; white-space: normal;
+  }
+  .info-icon:hover .tip-box { display: block; }
+  .info-icon .tip-box.tip-left { right: auto; left: 0; }
+  .card-value { font-size: 30px; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+  .card-sub { font-size: 11px; color: var(--muted); margin-top: 5px; }
+  .card-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 12px; overflow: hidden; }
+  .card-bar-fill { height: 100%; border-radius: 2px; transition: width .5s ease; }
+  .clr-green { color: var(--green); }
+  .clr-yellow { color: var(--yellow); }
+  .clr-red { color: var(--red); }
+  .clr-blue { color: var(--blue); }
+  .bar-green { background: var(--green); }
+  .bar-yellow { background: var(--yellow); }
+  .bar-red { background: var(--red); }
+
+  /* ── LLM JUDGE BREAKDOWN ── */
+  .judge-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 14px;
+  }
+  .judge-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--rad);
+    padding: 14px 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .judge-gauge {
+    width: 52px; height: 52px;
+    flex-shrink: 0;
+    position: relative;
+  }
+  .judge-gauge svg { width: 100%; height: 100%; }
+  .judge-info { flex: 1; min-width: 0; }
+  .judge-val { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .judge-name-row { display: flex; align-items: center; gap: 5px; margin-top: 3px; }
+  .judge-name { font-size: 11px; color: var(--muted); }
+
+  /* ── TABLE CONTROLS ── */
+  .table-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .table-controls h2 { font-size: 14px; font-weight: 600; }
+  .badge {
+    background: var(--border);
+    border-radius: 20px;
+    padding: 1px 10px;
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .search-box {
+    margin-left: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    width: 220px;
+  }
+  .search-box::placeholder { color: var(--muted); }
+  .filter-btn {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .filter-btn.active { border-color: var(--red); color: var(--red); }
+
+  /* ── TABLE ── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--rad);
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead { border-bottom: 1px solid var(--border); }
+  th {
+    padding: 9px 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: var(--muted);
+    text-align: left;
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+  th:hover { color: var(--text); }
+  th.asc::after { content: ' ↑'; color: var(--blue); }
+  th.desc::after { content: ' ↓'; color: var(--blue); }
+  td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.025); }
+  .td-num { text-align: right; font-variant-numeric: tabular-nums; }
+  .td-muted { color: var(--muted); }
+
+  .query-wrap { max-width: 360px; }
+  .query-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: default;
+  }
+  .query-text:hover { white-space: normal; }
+
+  /* score pills */
+  .pill {
+    display: inline-block;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+  .pill-g { background: rgba(63,185,80,.15); color: var(--green); }
+  .pill-y { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .pill-r { background: rgba(248,81,73,.15); color: var(--red); }
+
+  /* flag indicator */
+  .flag-ok  { color: var(--green); font-size: 13px; }
+  .flag-err { color: var(--red);   font-size: 12px; font-weight: 600; }
+
+  /* ── COLUMN HEADER TOOLTIP ── */
+  th[data-tip] { position: relative; }
+  th[data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute;
+    top: 110%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1c2128;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 11px;
+    font-size: 11px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    white-space: nowrap;
+    max-width: 260px;
+    white-space: normal;
+    width: max-content;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,.4);
+    pointer-events: none;
+    line-height: 1.5;
+  }
+
+  /* ── DETAIL MODAL ── */
+  .modal-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,.65);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    max-width: 700px;
+    width: 100%;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 16px 48px rgba(0,0,0,.6);
+  }
+  .modal-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  .modal-title { font-size: 13px; font-weight: 600; flex: 1; line-height: 1.5; }
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    flex-shrink: 0;
+    margin-top: -1px;
+  }
+  .modal-close:hover { color: var(--text); }
+  .modal-body { overflow-y: auto; padding: 18px 20px; flex: 1; }
+  .modal-section { margin-bottom: 18px; }
+  .modal-section:last-child { margin-bottom: 0; }
+  .modal-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .modal-scores {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 8px;
+  }
+  .modal-score-item {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+  }
+  .modal-score-label { font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+  .modal-score-val { font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .modal-reasoning {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+    font-size: 12px;
+    line-height: 1.7;
+    color: var(--text);
+    white-space: pre-wrap;
+  }
+  .modal-flags {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 14px;
+    max-height: 200px;
+    overflow-y: auto;
+  }
+  .flag-item {
+    font-size: 11px;
+    color: var(--red);
+    padding: 2px 0;
+    border-bottom: 1px solid var(--border);
+    line-height: 1.5;
+  }
+  .flag-item:last-child { border-bottom: none; }
+  .modal-meta { font-size: 11px; color: var(--muted); }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover td { background: rgba(88,166,255,.06) !important; }
+
+  /* ── EMPTY / LOADING ── */
+  .placeholder { text-align: center; padding: 48px; color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-logo">
+    RAG Eval <span>Dashboard</span>
+    <small>RAG Pipeline Quality Monitor</small>
+  </div>
+  <div class="sep"></div>
+  <select class="col-select" id="colSel" onchange="onColChange()">
+    <option value="">All collections</option>
+  </select>
+  <select class="col-select" id="platSel" onchange="onPlatChange()" title="Filter by pipeline platform">
+    <option value="">All platforms</option>
+  </select>
+  <div class="header-right">
+    <div class="pill-status">
+      <span class="dot loading" id="dot"></span>
+      <span id="statusLbl">Loading…</span>
+    </div>
+    <button class="btn" onclick="doRefresh()">↻ Refresh</button>
+    <button class="btn-danger" onclick="doReset()">🗑 Reset Data</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- Summary cards -->
+  <div class="section-title">Summary — LLM Judge (llama3.1:8b)</div>
+  <div class="cards" id="cards">
+    <div class="card"><div class="card-label">Total Evals</div><div class="card-value">—</div></div>
+  </div>
+
+  <!-- LLM judge breakdown -->
+  <div class="section-title" style="margin-top:24px">LLM Judge Breakdown</div>
+  <div class="judge-grid" id="judgeGrid">
+    <div class="judge-card"><div class="placeholder" style="padding:8px">Loading…</div></div>
+  </div>
+
+  <!-- Retrieval diagnostics (embedding-based, collapsible) -->
+  <details id="diagDetails" style="margin-top:24px">
+    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+      <span id="diagArrow" style="font-size:10px">▶</span>
+      Retrieval Diagnostics (embedding-based)
+      <span style="font-size:10px;color:var(--border);font-weight:400;text-transform:none;letter-spacing:0">— expand for cosine similarity metrics</span>
+    </summary>
+    <div style="margin-top:12px">
+      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.6;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px">
+        ⚠ Embedding-based scores are <strong>unreliable for structured/tabular PDFs</strong>.
+        Natural-language answers synthesised from key=value chunks score poorly on cosine similarity even when factually correct.
+        Use the LLM Judge scores above for quality decisions.
+        The one exception is <strong>Context Relevance</strong> — it measures retrieval quality (chunk selection) before the LLM is involved.
+      </div>
+      <div class="cards" id="diagCards"></div>
+    </div>
+  </details>
+
+  <!-- Per-query table -->
+  <div style="margin-top:28px">
+    <div class="table-controls">
+      <h2>Per-Query Results</h2>
+      <span class="badge" id="rowBadge">—</span>
+      <input class="search-box" id="searchBox" placeholder="Search queries…" oninput="renderTable()"/>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th onclick="sort('#')" id="th-id" data-tip="Row number (sorted by selected column)"
+              >#</th>
+            <th onclick="sort('query')" id="th-query" data-tip="The RAG query sent to Weaviate. Click any row to see full detail & judge commentary."
+              >Query</th>
+            <th onclick="sort('llm')" id="th-llm" class="td-num"
+              data-tip="LLM Judge Overall — composite score rated by llama3.1:8b reading the actual answer text. Primary quality signal. Target ≥ 0.75."
+              >LLM Judge</th>
+            <th onclick="sort('faith')" id="th-faith" class="td-num"
+              data-tip="LLM Faithfulness — judge's grounding score. High = answer claims are supported by the retrieved chunks. Primary anti-hallucination signal."
+              >Faithfulness</th>
+            <th onclick="sort('ansrel')" id="th-ansrel" class="td-num"
+              data-tip="LLM Answer Relevance — does the answer directly and completely address the question? Low = off-topic or incomplete response."
+              >Ans Rel</th>
+            <th onclick="sort('ctx')" id="th-ctx" class="td-num"
+              data-tip="Context Relevance — cosine similarity between query and retrieved chunks. The one reliable embedding metric: measures whether the retrieval step returned on-topic chunks."
+              >Ctx Rel</th>
+            <th onclick="sort('time')" id="th-time"
+              data-tip="Timestamp when this evaluation was recorded."
+              >Time</th>
+          </tr>
+        </thead>
+        <tbody id="tbody">
+          <tr><td colspan="6" class="placeholder">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<!-- Detail Modal -->
+<div class="modal-backdrop" id="modalBackdrop" onclick="closeModal(event)">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalQuery"></div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="modal-section">
+        <div class="modal-section-title">LLM Judge Scores — primary quality signal</div>
+        <div class="modal-scores" id="modalEmbScores"></div>
+      </div>
+      <div class="modal-section">
+        <div class="modal-section-title">Retrieval Diagnostics (embedding cosine — for reference)</div>
+        <div class="modal-scores" id="modalLLMScores"></div>
+      </div>
+      <div class="modal-section" id="modalReasoningSection">
+        <div class="modal-section-title">Judge Commentary</div>
+        <div class="modal-reasoning" id="modalReasoning"></div>
+      </div>
+      <div class="modal-section" id="modalFlagsSection">
+        <div class="modal-section-title">Embedding Faithfulness Flags
+          <span style="font-size:10px;font-weight:400;color:var(--muted);margin-left:8px;text-transform:none;letter-spacing:0">— low cosine sim, NOT hallucination for structured PDFs</span>
+        </div>
+        <div id="modalFlagsBanner" style="display:none;font-size:11px;color:var(--muted);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:8px 12px;margin-bottom:8px;line-height:1.6">
+          ⚠️ These sentences scored below the cosine similarity threshold (0.75) against the retrieved chunks.
+          For <strong>structured/tabular PDFs</strong> (key=value format), natural-language answers will almost always trigger this
+          — it is a <strong>text-format mismatch, not fabrication</strong>.
+          Check the <strong>LLM Faithfulness</strong> score above for the real grounding assessment.
+        </div>
+        <div class="modal-flags" id="modalFlags"></div>
+      </div>
+      <div class="modal-meta" id="modalMeta"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// State
+// ─────────────────────────────────────────────
+let collection = '';
+let platform   = '';
+let allRows    = [];
+let metrics    = null;
+let sortKey    = '#';
+let sortAsc    = true;
+let refreshTimer = null;
+let countdown    = 30;
+
+// ─────────────────────────────────────────────
+// Collections
+// ─────────────────────────────────────────────
+async function loadCollections() {
+  try {
+    const r   = await fetch('/eval/v1/collections');
+    const cols = await r.json();
+    const sel = document.getElementById('colSel');
+    sel.innerHTML = '<option value="">All collections</option>';
+    (cols || []).forEach(c => {
+      const o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      sel.appendChild(o);
+    });
+    if (cols && cols.length === 1) {
+      collection = cols[0];
+      sel.value  = cols[0];
+    }
+  } catch(e) { console.warn('collections:', e); }
+}
+
+function onColChange() {
+  collection = document.getElementById('colSel').value;
+  doRefresh();
+}
+
+async function loadPlatforms() {
+  try {
+    const r     = await fetch('/eval/v1/platforms');
+    const plats = await r.json();
+    const sel   = document.getElementById('platSel');
+    const prev  = sel.value;
+    sel.innerHTML = '<option value="">All platforms</option>';
+    const labels = { flogo:'Flogo', bw6:'TIBCO BW6', bw:'TIBCO BW', langchain:'LangChain', custom:'Custom' };
+    (plats || []).forEach(p => {
+      const o = document.createElement('option');
+      o.value = p;
+      o.textContent = labels[p] || p;
+      sel.appendChild(o);
+    });
+    if (prev && plats && plats.includes(prev)) sel.value = prev;
+  } catch(e) { console.warn('platforms:', e); }
+}
+
+function onPlatChange() {
+  platform = document.getElementById('platSel').value;
+  doRefresh();
+}
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+function scoreColor(v) {
+  if (v >= 0.70) return 'clr-green';
+  if (v >= 0.50) return 'clr-yellow';
+  return 'clr-red';
+}
+function barColor(v) {
+  if (v >= 0.70) return 'bar-green';
+  if (v >= 0.50) return 'bar-yellow';
+  return 'bar-red';
+}
+function pillClass(v) {
+  if (v >= 0.70) return 'pill-g';
+  if (v >= 0.50) return 'pill-y';
+  return 'pill-r';
+}
+function fmt(v, d=3) {
+  return (typeof v === 'number') ? v.toFixed(d) : '—';
+}
+function esc(s) {
+  return String(s||'')
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─────────────────────────────────────────────
+// Gauge SVG (circular progress)
+// ─────────────────────────────────────────────
+function gauge(value, color) {
+  const r   = 22;
+  const circ= 2 * Math.PI * r;
+  const pct = Math.min(Math.max(value, 0), 1);
+  const dash= pct * circ;
+  return `<svg viewBox="0 0 52 52">
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="#30363d" stroke-width="4"/>
+    <circle cx="26" cy="26" r="${r}" fill="none" stroke="${color}" stroke-width="4"
+      stroke-dasharray="${dash.toFixed(1)} ${circ.toFixed(1)}"
+      stroke-dashoffset="${(circ/4).toFixed(1)}"
+      stroke-linecap="round" transform="rotate(-90 26 26)"/>
+  </svg>`;
+}
+
+// ─────────────────────────────────────────────
+// Render summary cards
+// ─────────────────────────────────────────────
+function renderCards(m) {
+  if (!m || m.error) return;
+  const flaggedCount = m.hallucinationPct != null
+    ? Math.round((m.hallucinationPct / 100) * (m.totalEvals || 0)) : 0;
+
+  const defs = [
+    { label:'Total Evals', val: m.totalEvals, fmt: v=>v, bar:false, sub: collection || 'all collections', clr:'clr-blue',
+      tip:'Total number of query evaluations recorded for this collection. Each query sent through the RAG pipeline creates one row.' },
+    { label:'LLM Judge', val: m.avgLLMOverall, fmt: v=>v.toFixed(3), bar:true, sub:'llama3.1:8b overall',
+      tip:'Average composite score from the LLM judge (llama3.1:8b). Combines Faithfulness + Context Relevance + Answer Relevance as rated by the model reading actual text — not embeddings. This is the most reliable quality signal. Target \u2265 0.75.' },
+    { label:'LLM Faithfulness', val: m.avgLLMFaithfulness, fmt: v=>v.toFixed(3), bar:true, sub:'judge grounding score',
+      tip:'LLM judge: are all claims in the answer supported by the retrieved chunks? High score (\u2265 0.80) means the RAG pipeline is not fabricating facts. This is the primary anti-hallucination metric — prefer this over the embedding-based version.' },
+    { label:'Embed Score', val: m.avgOverall, fmt: v=>v.toFixed(3), bar:true, sub:'cosine similarity composite',
+      tip:'Composite embedding score: Context Relevance (30%) + Faithfulness (35%) + Answer Relevance (20%) + Chunk Utilization (15%). Computed via cosine similarity on nomic-embed-text vectors. Can underperform on structured/tabular PDFs — use LLM Judge for quality decisions.' },
+    { label:'Ctx Relevance', val: m.avgContextRelevance, fmt: v=>v.toFixed(3), bar:true, sub:'query\u2013chunk similarity',
+      tip:'Average cosine similarity between the query embedding and the retrieved chunk embeddings. Measures how well the vector search matched the question. Low score (< 0.50) suggests chunks are off-topic — consider tuning chunk size or the retrieval top-k.' },
+    { label:'Emb Faithfulness', val: m.avgFaithfulness, fmt: v=>v.toFixed(3), bar:true,
+      sub:`emb-based \u00b7 ${flaggedCount}/${m.totalEvals||0} queries flagged`,
+      clr: m.avgFaithfulness >= 0.70 ? 'clr-green' : m.avgFaithfulness >= 0.50 ? 'clr-yellow' : 'clr-red',
+      tip:`Embedding-based faithfulness: fraction of answer sentences that are cosine-similar to at least one retrieved chunk. Warning: for structured (key=value) PDFs, natural-language answers are systematically penalised — ${flaggedCount} of ${m.totalEvals||0} queries flagged here does NOT mean hallucination. Trust the LLM Faithfulness score instead.` },
+  ];
+
+  document.getElementById('cards').innerHTML = defs.map(d => {
+    const isN = typeof d.val === 'number';
+    const clr = d.clr || (d.bar ? scoreColor(d.val) : '');
+    const bPct= d.bar ? Math.round((d.val||0)*100) : 0;
+    const bClr= d.bar ? barColor(d.val) : '';
+    const tipHtml = d.tip
+      ? `<span class="info-icon">i<span class="tip-box">${esc(d.tip)}</span></span>`
+      : '';
+    return `<div class="card">
+      <div class="card-header"><span class="card-label">${d.label}</span>${tipHtml}</div>
+      <div class="card-value ${clr}">${isN ? d.fmt(d.val) : '\u2014'}</div>
+      <div class="card-sub">${d.sub||''}</div>
+      ${d.bar ? `<div class="card-bar"><div class="card-bar-fill ${bClr}" style="width:${bPct}%"></div></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Render judge breakdown gauges
+// ─────────────────────────────────────────────
+function renderJudge(m) {
+  if (!m || m.error) return;
+  const items = [
+    { name:'Overall', val: m.avgLLMOverall,
+      tip:'Weighted composite of all LLM judge dimensions. The headline quality number for this RAG pipeline. Target \u2265 0.75. Scores above 0.90 indicate excellent retrieval and generation quality.' },
+    { name:'Faithfulness', val: m.avgLLMFaithfulness,
+      tip:'LLM judge asks: \u201cAre all factual claims in the answer grounded in the retrieved context?\u201d This is the primary anti-hallucination signal. A score of 0.91 means the model is rarely fabricating beyond the source documents.' },
+    { name:'Ctx Relevance', val: m.avgLLMContextRelevance,
+      tip:'LLM judge asks: \u201cDid the retrieved chunks contain information relevant to the query?\u201d Low score (< 0.60) points to a retrieval problem \u2014 the vector search is surfacing chunks that do not address the question, even if the LLM answer sounds plausible.' },
+    { name:'Answer Relevance', val: m.avgLLMAnswerRelevance,
+      tip:'LLM judge asks: \u201cDoes the answer directly and completely address what was asked?\u201d Low score means the model gave a grounded but incomplete or off-topic response. Improving the prompt or retrieval top-k usually helps.' },
+  ];
+  const colorOf = v => v>=.7 ? '#3fb950' : v>=.5 ? '#d29922' : '#f85149';
+
+  document.getElementById('judgeGrid').innerHTML = items.map(it => {
+    const c = colorOf(it.val||0);
+    const tipHtml = it.tip
+      ? `<span class="info-icon">i<span class="tip-box tip-left">${esc(it.tip)}</span></span>`
+      : '';
+    return `<div class="judge-card">
+      <div class="judge-gauge">${gauge(it.val||0, c)}</div>
+      <div class="judge-info">
+        <div class="judge-val" style="color:${c}">${fmt(it.val)}</div>
+        <div class="judge-name-row"><span class="judge-name">${it.name}</span>${tipHtml}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Sorting
+// ─────────────────────────────────────────────
+const keyMap = {
+  '#':      r => r.id,
+  'query':  r => r.query,
+  'llm':    r => r.llmOverall,
+  'faith':  r => r.llmFaithfulness,
+  'ansrel': r => r.llmContextRelevance,
+  'ctx':    r => r.contextRelevance,
+  'time':   r => r.createdAt,
+};
+
+function sort(key) {
+  if (sortKey === key) sortAsc = !sortAsc;
+  else { sortKey = key; sortAsc = key === '#'; }
+  // update header classes
+  ['id','query','llm','faith','ansrel','ctx','time'].forEach(k => {
+    const th = document.getElementById('th-'+k);
+    if (!th) return;
+    th.className = th.className.replace(' asc','').replace(' desc','');
+  });
+  const th = document.getElementById('th-'+sortKey);
+  if (th) th.className += sortAsc ? ' asc' : ' desc';
+  renderTable();
+}
+
+// ─────────────────────────────────────────────
+// Render table
+// ─────────────────────────────────────────────
+function renderTable() {
+  const search = (document.getElementById('searchBox').value || '').toLowerCase();
+  const fn = keyMap[sortKey] || (r => r.id);
+
+  let rows = [...allRows];
+
+  // filter
+  if (search) rows = rows.filter(r => (r.query||'').toLowerCase().includes(search));
+  // sort
+  rows.sort((a,b) => {
+    let va = fn(a), vb = fn(b);
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+    const cmp = va < vb ? -1 : va > vb ? 1 : 0;
+    return sortAsc ? cmp : -cmp;
+  });
+
+  document.getElementById('rowBadge').textContent = rows.length + ' queries';
+  const tbody = document.getElementById('tbody');
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="placeholder">No results${search ? ' matching "'+esc(search)+'"' : ''}</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map((r, i) => {
+    const ts  = (r.createdAt||'').replace('T',' ').substring(0,23);
+    const idx = allRows.findIndex(x => x.id === r.id);
+    return `<tr class="clickable" onclick="openModal(${idx})">
+      <td class="td-num td-muted" style="min-width:36px">${i+1}</td>
+      <td class="query-wrap"><div class="query-text" title="${esc(r.query)}">${esc(r.query)}</div></td>
+      <td class="td-num"><span class="pill ${pillClass(r.llmOverall)}">${fmt(r.llmOverall)}</span></td>
+      <td class="td-num"><span class="pill ${pillClass(r.llmFaithfulness)}">${fmt(r.llmFaithfulness)}</span></td>
+      <td class="td-num"><span class="pill ${pillClass(r.llmContextRelevance)}">${fmt(r.llmContextRelevance)}</span></td>
+      <td class="td-num td-muted">${fmt(r.contextRelevance)}</td>
+      <td class="td-muted" style="white-space:nowrap;font-size:11px">${ts}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Detail Modal
+// ─────────────────────────────────────────────
+function scoreItem(label, val, colorFn) {
+  const c = colorFn ? scoreColor(val) : '';
+  return `<div class="modal-score-item">
+    <div class="modal-score-label">${label}</div>
+    <div class="modal-score-val ${c}">${fmt(val)}</div>
+  </div>`;
+}
+
+function openModal(idx) {
+  const r = allRows[idx];
+  if (!r) return;
+  document.getElementById('modalQuery').textContent = r.query;
+
+  document.getElementById('modalEmbScores').innerHTML = [
+    scoreItem('Overall', r.llmOverall, true),
+    scoreItem('Faithfulness', r.llmFaithfulness, true),
+    scoreItem('Ctx Relevance', r.llmContextRelevance, true),
+    scoreItem('Ans Relevance', r.llmAnswerRelevance, true),
+  ].join('');
+
+  document.getElementById('modalLLMScores').innerHTML = [
+    scoreItem('Ctx Rel (emb)', r.contextRelevance, true),
+    scoreItem('Faithfulness (emb)', r.faithfulness, false),
+    scoreItem('Ans Rel (emb)', r.answerRelevance, false),
+    scoreItem('Overall (emb)', r.overallScore, false),
+  ].join('');
+
+  const reasonSec = document.getElementById('modalReasoningSection');
+  const reasonEl  = document.getElementById('modalReasoning');
+  if (r.llmReasoning) {
+    reasonEl.textContent = r.llmReasoning;
+    reasonSec.style.display = '';
+  } else {
+    reasonSec.style.display = 'none';
+  }
+
+  const flagsSec   = document.getElementById('modalFlagsSection');
+  const flagsEl    = document.getElementById('modalFlags');
+  const flagBanner = document.getElementById('modalFlagsBanner');
+  if (r.hasFlags && r.flags && r.flags.length) {
+    flagsEl.innerHTML = r.flags.map(f =>
+      `<div class="flag-item" style="font-size:11px;opacity:0.75">${esc(f)}</div>`
+    ).join('');
+    flagBanner.style.display = '';
+    flagsSec.style.display = '';
+  } else {
+    flagsEl.innerHTML = '<div style="color:var(--green);font-size:12px">\u2713 No embedding flags — all answer sentences matched chunks above threshold.</div>';
+    flagBanner.style.display = 'none';
+    flagsSec.style.display = '';
+  }
+
+  const ts = (r.createdAt||'').replace('T',' ').replace('Z','') + ' UTC';
+  document.getElementById('modalMeta').textContent =
+    `Collection: ${r.collection}  ·  ID: ${r.id}  ·  ${ts}`;
+
+  document.getElementById('modalBackdrop').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modalBackdrop')) return;
+  document.getElementById('modalBackdrop').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.getElementById('modalBackdrop').classList.remove('open');
+    document.body.style.overflow = '';
+  }
+});
+
+// ─────────────────────────────────────────────
+// Status indicator
+// ─────────────────────────────────────────────
+function setStatus(state, msg) {
+  const dot = document.getElementById('dot');
+  const lbl = document.getElementById('statusLbl');
+  dot.className = 'dot' + (state === 'err' ? ' err' : state === 'loading' ? ' loading' : '');
+  lbl.textContent = msg;
+}
+
+// ─────────────────────────────────────────────
+// Refresh
+// ─────────────────────────────────────────────
+async function doReset() {
+  const scope = collection || 'ALL collections';
+  if (!confirm(`Delete all evaluation data for ${scope}?\n\nThis cannot be undone.`)) return;
+  setStatus('loading', 'Resetting…');
+  try {
+    const p = collection ? `?collection=${encodeURIComponent(collection)}` : '';
+    const res = await fetch('/eval/v1/results' + p, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Reset failed: ' + res.status);
+    metrics = null;
+    allRows = [];
+    renderCards({});
+    renderJudge({});
+    renderTable();
+    await loadPlatforms();
+    setStatus('ok', 'Reset — no data');
+  } catch (e) {
+    setStatus('error', 'Reset error');
+    console.error(e);
+  }
+}
+
+async function doRefresh() {
+  clearInterval(refreshTimer);
+  countdown = 30;
+  setStatus('loading', 'Refreshing…');
+  try {
+    const params = new URLSearchParams();
+    if (collection) params.set('collection', collection);
+    if (platform)   params.set('platform', platform);
+    const qs      = params.toString() ? '?' + params.toString() : '';
+    const qsLimit = qs ? qs + '&limit=1000' : '?limit=1000';
+    const [mRes, rRes] = await Promise.all([
+      fetch('/eval/v1/metrics' + qs),
+      fetch('/eval/v1/results' + qsLimit),
+    ]);
+    metrics = await mRes.json();
+    allRows = await rRes.json() || [];
+    if (metrics.error) throw new Error(metrics.error);
+    renderCards(metrics);
+    renderJudge(metrics);
+    renderTable();
+    setStatus('ok', 'Live');
+  } catch(e) {
+    setStatus('err', 'API error');
+    console.error(e);
+  }
+  refreshTimer = setInterval(() => {
+    countdown--;
+    if (countdown <= 0) { doRefresh(); return; }
+    setStatus('ok', `Refreshes in ${countdown}s`);
+  }, 1000);
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+(async () => {
+  await loadCollections();
+  await loadPlatforms();
+  await doRefresh();
+})();
+</script>
+</body>
+</html>
