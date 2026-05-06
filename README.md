@@ -69,7 +69,7 @@ curl http://localhost:9090/health
 # {"status":"ok","time":"..."}
 ```
 
-Open the dashboard at **http://localhost:9090/dashboard/**.
+Open the dashboard at **http://localhost:9090/**.
 
 <img width="2554" height="1069" alt="image" src="https://github.com/user-attachments/assets/059abe53-a2fa-4df7-b8dd-4b7b09f991ec" />
 
