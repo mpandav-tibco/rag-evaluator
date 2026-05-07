@@ -134,7 +134,8 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, `{"error":"cannot read body"}`, http.StatusBadRequest)
+		slog.Error("eval event: cannot read body", "error", err)
+		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 	slog.Info("eval event raw body", "contentType", r.Header.Get("Content-Type"), "bodyLen", len(body), "body", string(body))
@@ -145,8 +146,8 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 		// BW sends XML — parse and map to EventRequest
 		var xr xmlEventRequest
 		if err := xml.Unmarshal(body, &xr); err != nil {
-			slog.Error("invalid XML body", "error", err, "body", string(body))
-			http.Error(w, `{"error":"invalid XML"}`, http.StatusBadRequest)
+			slog.Error("eval event: invalid XML body", "error", err, "body", string(body))
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 		req.PipelineID = xr.PipelineID
@@ -160,14 +161,15 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if err := json.Unmarshal(body, &req); err != nil {
-			slog.Error("invalid JSON body", "error", err, "body", string(body))
-			http.Error(w, `{"error":"invalid JSON"}`, http.StatusBadRequest)
+			slog.Error("eval event: invalid JSON body", "error", err, "body", string(body))
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 	}
 
 	if req.Query == "" || req.Answer == "" {
-		http.Error(w, `{"error":"query and answer are required"}`, http.StatusBadRequest)
+		slog.Info("eval event: discarded — missing query or answer", "traceId", req.TraceID)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -184,7 +186,8 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(req.Chunks) == 0 {
-		http.Error(w, `{"error":"chunks or selectedEmbeddings are required"}`, http.StatusBadRequest)
+		slog.Info("eval event: discarded — no chunks", "traceId", req.TraceID)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
