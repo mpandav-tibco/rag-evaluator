@@ -78,7 +78,8 @@ curl http://localhost:9090/health
 
 Open the dashboard at **http://localhost:9090/**.
 
-<img width="2554" height="1069" alt="image" src="https://github.com/user-attachments/assets/059abe53-a2fa-4df7-b8dd-4b7b09f991ec" />
+<img width="2534" height="911" alt="image" src="https://github.com/user-attachments/assets/bfc62e85-a628-4b99-9523-fc003ff07f56" />
+
 
 
 ### Run with Docker Compose
