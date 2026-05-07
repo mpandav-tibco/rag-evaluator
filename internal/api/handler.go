@@ -209,9 +209,7 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("eval event dropped", "traceId", req.TraceID)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(`{"accepted":true}`))
 }
 
 // handleMetrics returns aggregated quality metrics for the dashboard.
