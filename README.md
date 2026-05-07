@@ -23,18 +23,25 @@ RAG Pipeline  ──POST /eval/v1/events──▶  rageval
 
 ## Metrics
 
+### Embedding-based
+
 | Metric | Method | Description |
 |---|---|---|
 | **Context Relevance** | Embedding cosine | Mean cosine similarity between the query and each retrieved chunk |
+| **Context Precision@K** | Embedding cosine | Weighted relevance of top-K chunks; higher-ranked relevant chunks score more |
 | **Faithfulness** | Embedding cosine | % of answer sentences whose embedding is grounded in the chunk corpus |
 | **Answer Relevance** | Embedding cosine | Cosine similarity between query and final answer |
-| **Chunk Utilization** | Embedding cosine | Cosine similarity between answer and concatenated chunks |
-| **Answer Correctness** | Embedding cosine | Cosine similarity between answer and expected answer (requires `expectedAnswer`) |
-| **Overall Score** | Weighted average | Combined score across all enabled metrics |
-| **LLM Context Relevance** | LLM judge | 0–1 score from LLM (enabled when `llmJudge.enabled: true`) |
-| **LLM Faithfulness** | LLM judge | 0–1 score from LLM |
-| **LLM Answer Relevance** | LLM judge | 0–1 score from LLM |
-| **LLM Overall** | LLM judge | Weighted: ctx×0.40 + faithfulness×0.35 + answer×0.25 |
+| **Overall Score** | Weighted average | Combined score across all enabled embedding metrics |
+
+### LLM judge (optional, requires `llmJudge.enabled: true`)
+
+| Metric | Description |
+|---|---|
+| **LLM Context Relevance** | Rubric-based 1–5 score — how well the retrieved chunks address the query |
+| **LLM Faithfulness** | Rubric-based 1–5 score — how well the answer is grounded in the chunks |
+| **LLM Claim Faithfulness** | Atomic fact check — fraction of answer claims that can be verified in the retrieved chunks |
+| **LLM Answer Relevance** | Rubric-based 1–5 score — how well the answer addresses the query |
+| **LLM Overall** | Weighted average: ctx×0.35 + faithfulness×0.35 + claimFaith×0.15 + answer×0.15 |
 
 ## Prerequisites
 
@@ -44,7 +51,7 @@ RAG Pipeline  ──POST /eval/v1/events──▶  rageval
   ```
 - For the LLM judge, also pull the judge model:
   ```sh
-  ollama pull llama3.1:8b
+  ollama pull qwen2.5:14b
   ```
 
 ## Quick Start
@@ -81,7 +88,7 @@ Requires [Docker](https://docs.docker.com/get-docker/) and Ollama running on the
 ```sh
 # Pull required Ollama models on the host first
 ollama pull nomic-embed-text
-ollama pull llama3.1:8b
+ollama pull qwen2.5:14b
 
 # Start rageval (builds image if not already built)
 docker compose up -d
@@ -129,11 +136,12 @@ eval:
   channelBuffer: 1000            # in-flight event queue depth
   sampleRate: 1.0                # fraction of events to score (1.0 = all)
   faithfulnessThreshold: 0.75    # min cosine score for a sentence to be "grounded"
+  aggregationMode: mean          # mean | min | max — how chunk scores are combined
   llmJudge:
     enabled: true
     url: http://localhost:11434
-    model: llama3.1:8b
-    timeoutSeconds: 90
+    model: qwen2.5:14b
+    timeoutSeconds: 300
 ```
 
 | Key | Description |
@@ -144,13 +152,16 @@ eval:
 | `embed.model` | Model used for all embedding calls |
 | `eval.sampleRate` | Set `< 1.0` to evaluate only a fraction of traffic |
 | `eval.faithfulnessThreshold` | Cosine threshold below which an answer sentence is flagged as ungrounded |
+| `eval.aggregationMode` | How per-chunk scores are combined: `mean` (default), `min`, or `max` |
 | `eval.llmJudge.enabled` | Toggle the LLM-as-a-judge scoring layer |
+| `eval.llmJudge.model` | Ollama model for LLM judge (default `qwen2.5:14b`) |
+| `eval.llmJudge.timeoutSeconds` | Per-query LLM judge timeout in seconds (default `300`) |
 
 ## API Reference
 
 ### `POST /eval/v1/events`
 
-Submit a RAG evaluation event. Returns `200 OK` with no body immediately — scoring happens asynchronously in the background.
+Submit a RAG evaluation event. Returns `202 Accepted` immediately — scoring happens asynchronously in the background and never blocks the caller's pipeline. Events with no chunks or no query field are silently discarded (also `202`).
 
 Accepts **JSON** (Flogo / curl) and **XML** (BW HTTP Client with `ragevalEvent` XSD).
 
@@ -258,11 +269,13 @@ Deletes all stored eval records. Pass `?collection=<name>` to scope the reset to
 
 A single-page dashboard is embedded in the binary and served at `/dashboard/`. It shows:
 
-- Aggregated metric cards (context relevance, faithfulness, answer relevance, chunk utilization, overall score)
-- Per-query results table with drill-down
+- **Embedding metric cards**: Context Relevance, Context Precision@K, Faithfulness, Answer Relevance, Overall
+- **LLM judge metric cards**: LLM Faithfulness, LLM Claim Faithfulness, LLM Answer Relevance, LLM Context Relevance, LLM Overall
+- **Diagnostics**: Hallucination %, ungrounded sentence rate
+- **Per-query results table** with drill-down modal showing both embedding and LLM judge scores per query
 - Collection and platform filter dropdowns
 - Period filter (7d / 30d / all time)
-- Reset button
+- Reset button (scoped to selected collection or global)
 
 ## Platform Integration
 
