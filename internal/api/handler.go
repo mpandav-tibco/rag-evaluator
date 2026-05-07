@@ -137,7 +137,7 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"cannot read body"}`, http.StatusBadRequest)
 		return
 	}
-	slog.Debug("eval event raw body", "contentType", r.Header.Get("Content-Type"), "bodyLen", len(body))
+	slog.Info("eval event raw body", "contentType", r.Header.Get("Content-Type"), "bodyLen", len(body), "body", string(body))
 
 	var req EventRequest
 	ct := r.Header.Get("Content-Type")
@@ -209,7 +209,9 @@ func (h *Handler) handleEvent(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("eval event dropped", "traceId", req.TraceID)
 	}
 
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
+	w.Write([]byte(`{"accepted":true}`))
 }
 
 // handleMetrics returns aggregated quality metrics for the dashboard.

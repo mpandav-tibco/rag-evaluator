@@ -17,6 +17,8 @@ type EvalStore interface {
 	Reset(ctx context.Context, collection string) error
 	// ListPlatforms returns distinct platform values stored in eval_results.
 	ListPlatforms(ctx context.Context) ([]string, error)
+	// QueryCompare returns side-by-side statistics for two collections or platforms.
+	QueryCompare(ctx context.Context, q CompareQuery) (*CompareResult, error)
 	Close() error
 }
 
@@ -30,20 +32,23 @@ type MetricsQuery struct {
 
 // MetricsResult is returned by QueryMetrics.
 type MetricsResult struct {
-	Collection       string  `json:"collection"`
-	PeriodDays       int     `json:"periodDays"`
-	TotalEvals       int     `json:"totalEvals"`
-	AvgOverall       float64 `json:"avgOverall"`
-	AvgContextRel    float64 `json:"avgContextRelevance"`
-	AvgFaithfulness  float64 `json:"avgFaithfulness"`
-	AvgAnswerRel     float64 `json:"avgAnswerRelevance"`
-	HallucinationPct float64 `json:"hallucinationPct"` // % evals with flags
+	Collection          string  `json:"collection"`
+	PeriodDays          int     `json:"periodDays"`
+	TotalEvals          int     `json:"totalEvals"`
+	AvgOverall          float64 `json:"avgOverall"`
+	AvgContextRel       float64 `json:"avgContextRelevance"`
+	AvgContextPrecision float64 `json:"avgContextPrecision"`
+	AvgFaithfulness     float64 `json:"avgFaithfulness"`
+	AvgAnswerRel        float64 `json:"avgAnswerRelevance"`
+	AvgContextRecall    float64 `json:"avgContextRecall"`
+	HallucinationPct    float64 `json:"hallucinationPct"` // % evals with flags
 	// LLM-as-a-judge averages (0 when judge is disabled)
-	AvgLLMOverall      float64       `json:"avgLLMOverall"`
-	AvgLLMContextRel   float64       `json:"avgLLMContextRelevance"`
-	AvgLLMFaithfulness float64       `json:"avgLLMFaithfulness"`
-	AvgLLMAnswerRel    float64       `json:"avgLLMAnswerRelevance"`
-	RecentAlerts       []AlertRecord `json:"recentAlerts"`
+	AvgLLMOverall           float64       `json:"avgLLMOverall"`
+	AvgLLMContextRel        float64       `json:"avgLLMContextRelevance"`
+	AvgLLMFaithfulness      float64       `json:"avgLLMFaithfulness"`
+	AvgLLMClaimFaithfulness float64       `json:"avgLLMClaimFaithfulness"`
+	AvgLLMAnswerRel         float64       `json:"avgLLMAnswerRelevance"`
+	RecentAlerts            []AlertRecord `json:"recentAlerts"`
 }
 
 // AlertRecord is a low-scoring eval surfaced on the dashboard.
@@ -64,19 +69,53 @@ type ResultsQuery struct {
 
 // ResultRow is a single scored eval row returned by QueryResults.
 type ResultRow struct {
-	ID               int      `json:"id"`
-	CreatedAt        string   `json:"createdAt"`
-	TraceID          string   `json:"traceId"`
-	Collection       string   `json:"collection"`
-	Query            string   `json:"query"`
-	OverallScore     float64  `json:"overallScore"`
-	ContextRelevance float64  `json:"contextRelevance"`
-	Faithfulness     float64  `json:"faithfulness"`
-	AnswerRelevance  float64  `json:"answerRelevance"`
-	LLMOverall       float64  `json:"llmOverall"`
-	LLMFaithfulness  float64  `json:"llmFaithfulness"`
-	LLMContextRel    float64  `json:"llmContextRelevance"`
-	LLMReasoning     string   `json:"llmReasoning"`
-	HasFlags         bool     `json:"hasFlags"`
-	Flags            []string `json:"flags"`
+	ID                   int      `json:"id"`
+	CreatedAt            string   `json:"createdAt"`
+	TraceID              string   `json:"traceId"`
+	Collection           string   `json:"collection"`
+	Query                string   `json:"query"`
+	OverallScore         float64  `json:"overallScore"`
+	ContextRelevance     float64  `json:"contextRelevance"`
+	ContextPrecision     float64  `json:"contextPrecision"`
+	ContextRecall        float64  `json:"contextRecall"`
+	Faithfulness         float64  `json:"faithfulness"`
+	AnswerRelevance      float64  `json:"answerRelevance"`
+	LLMOverall           float64  `json:"llmOverall"`
+	LLMFaithfulness      float64  `json:"llmFaithfulness"`
+	LLMClaimFaithfulness float64  `json:"llmClaimFaithfulness"`
+	LLMContextRel        float64  `json:"llmContextRelevance"`
+	LLMReasoning         string   `json:"llmReasoning"`
+	HasFlags             bool     `json:"hasFlags"`
+	Flags                []string `json:"flags"`
+}
+
+// CompareQuery defines two named groups to compare side-by-side.
+type CompareQuery struct {
+	ACollection string
+	BCollection string
+	APlatform   string
+	BPlatform   string
+	PeriodDays  int // 0 = all time
+}
+
+// RunStats contains aggregate statistics for one side of a comparison.
+type RunStats struct {
+	Name                    string  `json:"name"`
+	TotalEvals              int     `json:"totalEvals"`
+	AvgOverall              float64 `json:"avgOverall"`
+	P25Overall              float64 `json:"p25Overall"`
+	P75Overall              float64 `json:"p75Overall"`
+	AvgContextRel           float64 `json:"avgContextRelevance"`
+	AvgContextPrecision     float64 `json:"avgContextPrecision"`
+	AvgFaithfulness         float64 `json:"avgFaithfulness"`
+	AvgLLMClaimFaithfulness float64 `json:"avgLLMClaimFaithfulness"`
+	AvgAnswerRel            float64 `json:"avgAnswerRelevance"`
+	AvgLLMOverall           float64 `json:"avgLLMOverall"`
+	HallucinationPct        float64 `json:"hallucinationPct"`
+}
+
+// CompareResult holds statistics for both sides of a collection/platform comparison.
+type CompareResult struct {
+	A RunStats `json:"a"`
+	B RunStats `json:"b"`
 }

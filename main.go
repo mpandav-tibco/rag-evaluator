@@ -81,7 +81,7 @@ func main() {
 	}
 
 	// Scorer + worker pool
-	scorer := engine.NewScorer(embedProvider, cfg.Eval.FaithfulnessThreshold)
+	scorer := engine.NewScorer(embedProvider, cfg.Eval.FaithfulnessThreshold, cfg.Eval.AggregationMode)
 	if cfg.Eval.LLMJudge.Enabled {
 		judge := engine.NewLLMJudge(cfg.Eval.LLMJudge.URL, cfg.Eval.LLMJudge.Model, cfg.Eval.LLMJudge.TimeoutSeconds)
 		scorer.SetLLMJudge(judge)

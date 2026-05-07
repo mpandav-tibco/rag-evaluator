@@ -12,7 +12,8 @@ import (
 )
 
 // scoringTimeout is the maximum time a single eval job may take.
-const scoringTimeout = 90 * time.Second
+// Must be longer than llmJudge.timeoutSeconds (currently 180s) plus embed latency.
+const scoringTimeout = 300 * time.Second
 
 // EvalJob is a single evaluation job pushed from the API handler.
 type EvalJob struct {
@@ -105,7 +106,7 @@ func (p *WorkerPool) process(workerID int, job EvalJob) {
 		"contextRelevance", result.ContextRelevance,
 		"latency", latency.Round(time.Millisecond))
 
-	if err := p.store.WriteResult(ctx, result); err != nil {
+	if err := p.store.WriteResult(context.Background(), result); err != nil {
 		slog.Error("rageval: store write failed",
 			"traceId", result.TraceID,
 			"error", err)

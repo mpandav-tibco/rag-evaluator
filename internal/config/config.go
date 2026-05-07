@@ -38,6 +38,7 @@ type EvalConfig struct {
 	ChannelBuffer         int            `yaml:"channelBuffer"`
 	SampleRate            float64        `yaml:"sampleRate"`
 	FaithfulnessThreshold float64        `yaml:"faithfulnessThreshold"`
+	AggregationMode       string         `yaml:"aggregationMode"` // mean | min | max (default: mean)
 	LLMJudge              LLMJudgeConfig `yaml:"llmJudge"`
 }
 
@@ -109,5 +110,8 @@ func applyDefaults(c *Config) {
 	}
 	if c.Eval.FaithfulnessThreshold == 0 {
 		c.Eval.FaithfulnessThreshold = 0.75
+	}
+	if c.Eval.AggregationMode == "" {
+		c.Eval.AggregationMode = "mean"
 	}
 }

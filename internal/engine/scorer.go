@@ -39,26 +39,33 @@ type EvalResult struct {
 	AnswerRelevance   float64 // cosine(query, answer)
 	ChunkUtilization  float64 // cosine(answer, concat(chunks))
 	AnswerCorrectness float64 // cosine(answer, expectedAnswer) — 0 if not provided
+	ContextPrecision  float64 // Weighted Precision@K — penalizes poor retrieval ranking
+	ContextRecall     float64 // fraction of expected-answer facts covered by context (needs ExpectedAnswer)
 	OverallScore      float64
 	Flags             []string // sentences flagged as not grounded
 
 	// LLM-as-a-judge scores (populated when judge is enabled)
-	LLMContextRelevance float64
-	LLMFaithfulness     float64
-	LLMAnswerRelevance  float64
-	LLMOverall          float64
-	LLMReasoning        string
+	LLMContextRelevance  float64
+	LLMFaithfulness      float64
+	LLMAnswerRelevance   float64
+	LLMClaimFaithfulness float64 // claim-level: grounded claims / total claims
+	LLMOverall           float64
+	LLMReasoning         string
 }
 
 // Scorer computes RAG quality metrics using embedding-based methods only.
 type Scorer struct {
-	embed     EmbedProvider
-	threshold float64   // faithfulness threshold (default 0.75)
-	judge     *LLMJudge // optional LLM-as-a-judge layer; nil = disabled
+	embed           EmbedProvider
+	threshold       float64   // faithfulness threshold (default 0.75)
+	aggregationMode string    // "mean" | "min" | "max" over per-chunk similarity scores
+	judge           *LLMJudge // optional LLM-as-a-judge layer; nil = disabled
 }
 
-func NewScorer(embed EmbedProvider, faithfulnessThreshold float64) *Scorer {
-	return &Scorer{embed: embed, threshold: faithfulnessThreshold}
+func NewScorer(embed EmbedProvider, faithfulnessThreshold float64, aggregationMode string) *Scorer {
+	if aggregationMode == "" {
+		aggregationMode = "mean"
+	}
+	return &Scorer{embed: embed, threshold: faithfulnessThreshold, aggregationMode: aggregationMode}
 }
 
 // SetLLMJudge attaches an LLM judge to the scorer. Call before first use.
@@ -94,12 +101,15 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 	concatVec := vecs[2]
 	chunkVecs := vecs[3 : 3+len(req.Chunks)]
 
-	// 1. Context Relevance — mean cosine(query, each chunk)
-	contextRel := 0.0
-	for _, cv := range chunkVecs {
-		contextRel += cosineSim(queryVec, cv)
+	// 1. Context Relevance — aggregated cosine(query, each chunk)
+	chunkSims := make([]float64, len(chunkVecs))
+	for i, cv := range chunkVecs {
+		chunkSims[i] = cosineSim(queryVec, cv)
 	}
-	contextRel /= float64(len(chunkVecs))
+	contextRel := aggregateChunkScores(chunkSims, s.aggregationMode)
+
+	// 1b. Context Precision@K — weighted precision penalising low-ranked relevant chunks
+	contextPrec := s.scoreContextPrecision(queryVec, chunkVecs)
 
 	// 2. Answer Relevance — cosine(query, answer)
 	answerRel := cosineSim(queryVec, answerVec)
@@ -118,11 +128,11 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 	}
 
 	// Overall: weighted average (correctness excluded if not provided)
-	overall := (contextRel*0.30 + faithfulness*0.35 + answerRel*0.20 + chunkUtil*0.15)
+	overall := (contextRel*0.25 + contextPrec*0.10 + faithfulness*0.35 + answerRel*0.20 + chunkUtil*0.10)
 	if req.ExpectedAnswer != "" {
 		// Blend in correctness at the expense of the others
-		overall = (contextRel*0.20 + faithfulness*0.25 + answerRel*0.15 +
-			chunkUtil*0.10 + answerCorrectness*0.30)
+		overall = (contextRel*0.15 + contextPrec*0.10 + faithfulness*0.25 + answerRel*0.15 +
+			chunkUtil*0.05 + answerCorrectness*0.30)
 	}
 
 	result := &EvalResult{
@@ -132,6 +142,7 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 		Collection:        req.Collection,
 		Query:             req.Query,
 		ContextRelevance:  round2(contextRel),
+		ContextPrecision:  round2(contextPrec),
 		Faithfulness:      round2(faithfulness),
 		AnswerRelevance:   round2(answerRel),
 		ChunkUtilization:  round2(chunkUtil),
@@ -143,6 +154,7 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 	slog.Debug("scorer: metrics computed",
 		"traceId", req.TraceID,
 		"contextRelevance", result.ContextRelevance,
+		"contextPrecision", result.ContextPrecision,
 		"faithfulness", result.Faithfulness,
 		"answerRelevance", result.AnswerRelevance,
 		"chunkUtilization", result.ChunkUtilization,
@@ -158,8 +170,10 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 			result.LLMContextRelevance = llmResult.ContextRelevance
 			result.LLMFaithfulness = llmResult.Faithfulness
 			result.LLMAnswerRelevance = llmResult.AnswerRelevance
+			result.LLMClaimFaithfulness = llmResult.ClaimFaithfulness
 			result.LLMOverall = llmResult.Overall
 			result.LLMReasoning = llmResult.Reasoning
+			result.ContextRecall = llmResult.ContextRecall
 		}
 	}
 
@@ -218,6 +232,68 @@ func cosineSim(a, b []float32) float64 {
 		return 0
 	}
 	return dot / denom
+}
+
+// aggregateChunkScores combines per-chunk similarity scores using the configured mode.
+func aggregateChunkScores(scores []float64, mode string) float64 {
+	if len(scores) == 0 {
+		return 0
+	}
+	switch mode {
+	case "min":
+		m := scores[0]
+		for _, s := range scores[1:] {
+			if s < m {
+				m = s
+			}
+		}
+		return m
+	case "max":
+		m := scores[0]
+		for _, s := range scores[1:] {
+			if s > m {
+				m = s
+			}
+		}
+		return m
+	default: // mean
+		sum := 0.0
+		for _, s := range scores {
+			sum += s
+		}
+		return sum / float64(len(scores))
+	}
+}
+
+// scoreContextPrecision computes Weighted Precision@K for the retrieved chunks.
+// Chunks are assumed to be in retrieval-rank order (index 0 = rank 1).
+// A chunk is "relevant" when cosine(query, chunk) >= s.threshold.
+// This penalizes relevant chunks appearing late in the ranked list.
+func (s *Scorer) scoreContextPrecision(queryVec []float32, chunkVecs [][]float32) float64 {
+	K := len(chunkVecs)
+	if K == 0 {
+		return 0
+	}
+	relevant := make([]bool, K)
+	totalRelevant := 0
+	for i, cv := range chunkVecs {
+		if cosineSim(queryVec, cv) >= s.threshold {
+			relevant[i] = true
+			totalRelevant++
+		}
+	}
+	if totalRelevant == 0 {
+		return 0
+	}
+	sum := 0.0
+	relevantSoFar := 0
+	for k := 0; k < K; k++ {
+		if relevant[k] {
+			relevantSoFar++
+			sum += float64(relevantSoFar) / float64(k+1)
+		}
+	}
+	return sum / float64(totalRelevant)
 }
 
 // splitSentences splits text on sentence-ending punctuation.

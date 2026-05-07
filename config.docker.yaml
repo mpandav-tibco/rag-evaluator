@@ -18,8 +18,9 @@ eval:
   channelBuffer: 1000
   sampleRate: 1.0
   faithfulnessThreshold: 0.75
+  aggregationMode: mean  # mean | min | max
   llmJudge:
     enabled: true
     url: http://host.docker.internal:11434
-    model: qwen2.5:32b
-    timeoutSeconds: 180
+    model: qwen2.5:14b
+    timeoutSeconds: 300

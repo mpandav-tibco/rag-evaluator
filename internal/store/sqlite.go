@@ -72,6 +72,9 @@ CREATE INDEX IF NOT EXISTS idx_created_at ON eval_results(created_at);
 		{"llm_overall", "REAL"},
 		{"llm_reasoning", "TEXT"},
 		{"platform", "TEXT"},
+		{"context_precision", "REAL"},
+		{"context_recall", "REAL"},
+		{"llm_claim_faithfulness", "REAL"},
 	}
 	existing := map[string]bool{}
 	rows, err := db.Query(`PRAGMA table_info(eval_results)`)
@@ -107,8 +110,9 @@ INSERT INTO eval_results
   (created_at, pipeline_id, platform, trace_id, collection, query,
    context_relevance, faithfulness, answer_relevance,
    chunk_utilization, answer_correctness, overall_score, flags,
-   llm_ctx_relevance, llm_faithfulness, llm_ans_relevance, llm_overall, llm_reasoning)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+   llm_ctx_relevance, llm_faithfulness, llm_ans_relevance, llm_overall, llm_reasoning,
+   context_precision, context_recall, llm_claim_faithfulness)
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		now,
 		r.PipelineID, r.Platform, r.TraceID, r.Collection, r.Query,
 		r.ContextRelevance, r.Faithfulness, r.AnswerRelevance,
@@ -116,6 +120,7 @@ VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		string(flags),
 		r.LLMContextRelevance, r.LLMFaithfulness, r.LLMAnswerRelevance,
 		r.LLMOverall, r.LLMReasoning,
+		r.ContextPrecision, r.ContextRecall, r.LLMClaimFaithfulness,
 	)
 	return err
 }
@@ -149,20 +154,23 @@ SELECT
   COUNT(*),
   COALESCE(AVG(overall_score), 0),
   COALESCE(AVG(context_relevance), 0),
+  COALESCE(AVG(context_precision), 0),
   COALESCE(AVG(faithfulness), 0),
   COALESCE(AVG(answer_relevance), 0),
+  COALESCE(AVG(context_recall), 0),
   COALESCE(SUM(CASE WHEN flags != '[]' AND flags != 'null' THEN 1 ELSE 0 END), 0),
   COALESCE(AVG(llm_overall), 0),
   COALESCE(AVG(llm_ctx_relevance), 0),
   COALESCE(AVG(llm_faithfulness), 0),
+  COALESCE(AVG(llm_claim_faithfulness), 0),
   COALESCE(AVG(llm_ans_relevance), 0)
 FROM eval_results WHERE %s`, clause), args...)
 
 	var total, hallucCount int
-	var avgOverall, avgCtx, avgFaith, avgAns float64
-	var avgLLMOverall, avgLLMCtx, avgLLMFaith, avgLLMAns float64
-	if err := row.Scan(&total, &avgOverall, &avgCtx, &avgFaith, &avgAns, &hallucCount,
-		&avgLLMOverall, &avgLLMCtx, &avgLLMFaith, &avgLLMAns); err != nil {
+	var avgOverall, avgCtx, avgCtxPrec, avgFaith, avgAns, avgCtxRecall float64
+	var avgLLMOverall, avgLLMCtx, avgLLMFaith, avgLLMClaimFaith, avgLLMAns float64
+	if err := row.Scan(&total, &avgOverall, &avgCtx, &avgCtxPrec, &avgFaith, &avgAns, &avgCtxRecall, &hallucCount,
+		&avgLLMOverall, &avgLLMCtx, &avgLLMFaith, &avgLLMClaimFaith, &avgLLMAns); err != nil {
 		return nil, fmt.Errorf("query metrics: %w", err)
 	}
 
@@ -195,19 +203,22 @@ ORDER BY created_at DESC LIMIT ?`, clause), alertArgs...)
 	}
 
 	return &MetricsResult{
-		Collection:         q.Collection,
-		PeriodDays:         q.PeriodDays,
-		TotalEvals:         total,
-		AvgOverall:         round2(avgOverall),
-		AvgContextRel:      round2(avgCtx),
-		AvgFaithfulness:    round2(avgFaith),
-		AvgAnswerRel:       round2(avgAns),
-		HallucinationPct:   round2(hallucinationPct),
-		AvgLLMOverall:      round2(avgLLMOverall),
-		AvgLLMContextRel:   round2(avgLLMCtx),
-		AvgLLMFaithfulness: round2(avgLLMFaith),
-		AvgLLMAnswerRel:    round2(avgLLMAns),
-		RecentAlerts:       alerts,
+		Collection:              q.Collection,
+		PeriodDays:              q.PeriodDays,
+		TotalEvals:              total,
+		AvgOverall:              round2(avgOverall),
+		AvgContextRel:           round2(avgCtx),
+		AvgContextPrecision:     round2(avgCtxPrec),
+		AvgFaithfulness:         round2(avgFaith),
+		AvgAnswerRel:            round2(avgAns),
+		AvgContextRecall:        round2(avgCtxRecall),
+		HallucinationPct:        round2(hallucinationPct),
+		AvgLLMOverall:           round2(avgLLMOverall),
+		AvgLLMContextRel:        round2(avgLLMCtx),
+		AvgLLMFaithfulness:      round2(avgLLMFaith),
+		AvgLLMClaimFaithfulness: round2(avgLLMClaimFaith),
+		AvgLLMAnswerRel:         round2(avgLLMAns),
+		RecentAlerts:            alerts,
 	}, nil
 }
 
@@ -234,9 +245,11 @@ func (s *SQLiteStore) QueryResults(ctx context.Context, q ResultsQuery) ([]Resul
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 SELECT id, created_at, COALESCE(trace_id,''), COALESCE(collection,''), COALESCE(query,''),
        COALESCE(overall_score,0), COALESCE(context_relevance,0),
+       COALESCE(context_precision,0), COALESCE(context_recall,0),
        COALESCE(faithfulness,0), COALESCE(answer_relevance,0),
        COALESCE(llm_overall,0), COALESCE(llm_faithfulness,0),
-       COALESCE(llm_ctx_relevance,0), COALESCE(llm_reasoning,''), COALESCE(flags,'[]')
+       COALESCE(llm_claim_faithfulness,0), COALESCE(llm_ctx_relevance,0),
+       COALESCE(llm_reasoning,''), COALESCE(flags,'[]')
 FROM eval_results WHERE %s ORDER BY created_at %s LIMIT ?`, clause, order), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query results: %w", err)
@@ -248,8 +261,12 @@ FROM eval_results WHERE %s ORDER BY created_at %s LIMIT ?`, clause, order), args
 		var flagsJSON string
 		if err := rows.Scan(
 			&r.ID, &r.CreatedAt, &r.TraceID, &r.Collection, &r.Query,
-			&r.OverallScore, &r.ContextRelevance, &r.Faithfulness, &r.AnswerRelevance,
-			&r.LLMOverall, &r.LLMFaithfulness, &r.LLMContextRel, &r.LLMReasoning, &flagsJSON,
+			&r.OverallScore, &r.ContextRelevance,
+			&r.ContextPrecision, &r.ContextRecall,
+			&r.Faithfulness, &r.AnswerRelevance,
+			&r.LLMOverall, &r.LLMFaithfulness,
+			&r.LLMClaimFaithfulness, &r.LLMContextRel,
+			&r.LLMReasoning, &flagsJSON,
 		); err != nil {
 			continue
 		}
@@ -290,6 +307,108 @@ func (s *SQLiteStore) ListPlatforms(ctx context.Context) ([]string, error) {
 		plats = append(plats, p)
 	}
 	return plats, nil
+}
+
+func (s *SQLiteStore) QueryCompare(ctx context.Context, q CompareQuery) (*CompareResult, error) {
+	a, err := s.runStatsForGroup(ctx, q.ACollection, q.APlatform, q.PeriodDays)
+	if err != nil {
+		return nil, fmt.Errorf("compare A: %w", err)
+	}
+	b, err := s.runStatsForGroup(ctx, q.BCollection, q.BPlatform, q.PeriodDays)
+	if err != nil {
+		return nil, fmt.Errorf("compare B: %w", err)
+	}
+	return &CompareResult{A: *a, B: *b}, nil
+}
+
+func (s *SQLiteStore) runStatsForGroup(ctx context.Context, collection, platform string, periodDays int) (*RunStats, error) {
+	where := []string{"1=1"}
+	args := []interface{}{}
+	name := collection
+	if collection != "" {
+		where = append(where, "collection = ?")
+		args = append(args, collection)
+	}
+	if platform != "" {
+		where = append(where, "platform = ?")
+		args = append(args, platform)
+		if name == "" {
+			name = platform
+		}
+	}
+	if periodDays > 0 {
+		cutoff := time.Now().AddDate(0, 0, -periodDays).Format("2006-01-02")
+		where = append(where, "created_at >= ?")
+		args = append(args, cutoff)
+	}
+	clause := strings.Join(where, " AND ")
+
+	row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
+SELECT COUNT(*),
+  COALESCE(AVG(overall_score),0), COALESCE(AVG(context_relevance),0),
+  COALESCE(AVG(context_precision),0), COALESCE(AVG(faithfulness),0),
+  COALESCE(AVG(llm_claim_faithfulness),0), COALESCE(AVG(answer_relevance),0),
+  COALESCE(AVG(llm_overall),0),
+  COALESCE(SUM(CASE WHEN flags != '[]' AND flags != 'null' THEN 1 ELSE 0 END),0)
+FROM eval_results WHERE %s`, clause), args...)
+
+	var total, hallucCount int
+	var avgOverall, avgCtx, avgCtxPrec, avgFaith, avgClaimFaith, avgAns, avgLLMOverall float64
+	if err := row.Scan(&total, &avgOverall, &avgCtx, &avgCtxPrec, &avgFaith,
+		&avgClaimFaith, &avgAns, &avgLLMOverall, &hallucCount); err != nil {
+		return nil, fmt.Errorf("runStats scan: %w", err)
+	}
+
+	// Fetch all overall_scores (DB-ordered ascending) for percentile computation
+	scoreRows, err := s.db.QueryContext(ctx,
+		fmt.Sprintf(`SELECT overall_score FROM eval_results WHERE %s ORDER BY overall_score`, clause), args...)
+	if err != nil {
+		return nil, fmt.Errorf("runStats percentile query: %w", err)
+	}
+	defer scoreRows.Close()
+	var scores []float64
+	for scoreRows.Next() {
+		var v float64
+		if err := scoreRows.Scan(&v); err == nil {
+			scores = append(scores, v)
+		}
+	}
+
+	p25, p75 := percentile(scores, 0.25), percentile(scores, 0.75)
+	hallucinationPct := 0.0
+	if total > 0 {
+		hallucinationPct = float64(hallucCount) / float64(total) * 100
+	}
+
+	return &RunStats{
+		Name:                    name,
+		TotalEvals:              total,
+		AvgOverall:              round2(avgOverall),
+		P25Overall:              round2(p25),
+		P75Overall:              round2(p75),
+		AvgContextRel:           round2(avgCtx),
+		AvgContextPrecision:     round2(avgCtxPrec),
+		AvgFaithfulness:         round2(avgFaith),
+		AvgLLMClaimFaithfulness: round2(avgClaimFaith),
+		AvgAnswerRel:            round2(avgAns),
+		AvgLLMOverall:           round2(avgLLMOverall),
+		HallucinationPct:        round2(hallucinationPct),
+	}, nil
+}
+
+// percentile returns the p-th quantile (0–1) of a pre-sorted slice using linear interpolation.
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	idx := p * float64(len(sorted)-1)
+	lo := int(idx)
+	hi := lo + 1
+	if hi >= len(sorted) {
+		return sorted[len(sorted)-1]
+	}
+	frac := idx - float64(lo)
+	return sorted[lo]*(1-frac) + sorted[hi]*frac
 }
 
 func (s *SQLiteStore) Close() error {
