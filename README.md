@@ -31,7 +31,7 @@ RAG Pipeline  ──POST /eval/v1/events──▶  rageval
 | **Context Precision@K** | Embedding cosine | Weighted relevance of top-K chunks; higher-ranked relevant chunks score more |
 | **Faithfulness** | Embedding cosine | % of answer sentences whose embedding is grounded in the chunk corpus |
 | **Answer Relevance** | Embedding cosine | Cosine similarity between query and final answer |
-| **Overall Score** | Weighted average | Combined score across all enabled embedding metrics |
+| **Overall Score** | Weighted average | ctx_relevance×0.25 + ctx_precision×0.10 + faithfulness×0.35 + answer_relevance×0.20 + chunk_utilization×0.10 |
 
 ### LLM judge (optional, requires `llmJudge.enabled: true`)
 
@@ -41,7 +41,7 @@ RAG Pipeline  ──POST /eval/v1/events──▶  rageval
 | **LLM Faithfulness** | Rubric-based 1–5 score — how well the answer is grounded in the chunks |
 | **LLM Claim Faithfulness** | Atomic fact check — fraction of answer claims that can be verified in the retrieved chunks |
 | **LLM Answer Relevance** | Rubric-based 1–5 score — how well the answer addresses the query |
-| **LLM Overall** | Weighted average: ctx×0.35 + faithfulness×0.35 + claimFaith×0.15 + answer×0.15 |
+| **LLM Overall** | Weighted average: context_relevance×0.40 + faithfulness×0.35 + answer_relevance×0.25 |
 
 ## Prerequisites
 
@@ -89,7 +89,7 @@ Requires [Docker](https://docs.docker.com/get-docker/) and Ollama running on the
 ```sh
 # Pull required Ollama models on the host first
 ollama pull nomic-embed-text
-ollama pull llama3.1:8b
+ollama pull qwen2.5:14b
 
 # Start rageval (builds image if not already built)
 docker compose up -d
@@ -136,7 +136,7 @@ eval:
   workerCount: 2                 # parallel scoring workers
   channelBuffer: 1000            # in-flight event queue depth
   sampleRate: 1.0                # fraction of events to score (1.0 = all)
-  faithfulnessThreshold: 0.75    # min cosine score for a sentence to be "grounded"
+  faithfulnessThreshold: 0.60    # min cosine score for a sentence to be "grounded"
   aggregationMode: mean          # mean | min | max — how chunk scores are combined
   llmJudge:
     enabled: true
@@ -268,12 +268,17 @@ Deletes all stored eval records. Pass `?collection=<name>` to scope the reset to
 
 ## Dashboard
 
-A single-page dashboard is embedded in the binary and served at `/dashboard/`. It shows:
+A single-page dashboard is embedded in the binary and served at `/`. It shows:
 
-- **Embedding metric cards**: Context Relevance, Context Precision@K, Faithfulness, Answer Relevance, Overall
-- **LLM judge metric cards**: LLM Faithfulness, LLM Claim Faithfulness, LLM Answer Relevance, LLM Context Relevance, LLM Overall
+- **LLM judge metric cards**: LLM Overall, LLM Faithfulness, LLM Claim Faithfulness, LLM Answer Relevance, LLM Context Relevance
+- **Embedding metric cards**: Overall, Context Relevance, Context Precision@K, Faithfulness, Answer Relevance
 - **Diagnostics**: Hallucination %, ungrounded sentence rate
-- **Per-query results table** with drill-down modal showing both embedding and LLM judge scores per query
+- **Per-query results table** with drill-down modal showing:
+  - RAG answer text
+  - LLM judge scores per query
+  - Embedding-based retrieval diagnostics
+  - Judge commentary / reasoning
+  - Embedding flags (ungrounded sentences)
 - Collection and platform filter dropdowns
 - Period filter (7d / 30d / all time)
 - Reset button (scoped to selected collection or global)
