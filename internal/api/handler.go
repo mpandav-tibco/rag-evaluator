@@ -124,6 +124,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /eval/v1/platforms", h.handlePlatforms)
 	mux.HandleFunc("GET /eval/v1/results", h.handleResults)
 	mux.HandleFunc("GET /eval/v1/collections", h.handleCollections)
+	mux.HandleFunc("GET /eval/v1/compare", h.handleCompare)
 	mux.HandleFunc("DELETE /eval/v1/results", h.handleReset)
 	mux.HandleFunc("GET /health", h.handleHealth)
 }
@@ -333,4 +334,36 @@ func (h *Handler) handleCollections(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	json.NewEncoder(w).Encode(cols)
+}
+
+// handleCompare returns side-by-side aggregate statistics for two collections.
+func (h *Handler) handleCompare(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	a := q.Get("a")
+	b := q.Get("b")
+	if a == "" || b == "" {
+		http.Error(w, `{"error":"query params a and b are required"}`, http.StatusBadRequest)
+		return
+	}
+	periodDays := 0
+	if p := q.Get("period"); p != "" {
+		s := p
+		if len(s) > 0 && s[len(s)-1] == 'd' {
+			s = s[:len(s)-1]
+		}
+		periodDays, _ = strconv.Atoi(s)
+	}
+	result, err := h.store.QueryCompare(r.Context(), store.CompareQuery{
+		ACollection: a,
+		BCollection: b,
+		PeriodDays:  periodDays,
+	})
+	if err != nil {
+		slog.Error("compare query failed", "error", err)
+		http.Error(w, `{"error":"internal error"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	json.NewEncoder(w).Encode(result)
 }

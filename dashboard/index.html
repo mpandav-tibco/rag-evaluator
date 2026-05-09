@@ -407,8 +407,18 @@
   /* ── EMPTY / LOADING ── */
   .placeholder { text-align: center; padding: 48px; color: var(--muted); }
 
+  /* ── PAGINATION ── */
+  .pagination { display:flex; align-items:center; gap:10px; padding:10px 0; justify-content:space-between; flex-wrap:wrap; }
+  .pagination-info { font-size:12px; color:var(--muted); }
+  .pagination-controls { display:flex; align-items:center; gap:8px; }
+  .pagination-controls button { background:var(--surface); border:1px solid var(--border); color:var(--text); padding:4px 10px; border-radius:var(--rad); cursor:pointer; font-size:12px; }
+  .pagination-controls button:hover:not(:disabled) { border-color:var(--blue); color:var(--blue); }
+  .pagination-controls button:disabled { opacity:0.35; cursor:default; }
+  .page-size-select { background:var(--bg); border:1px solid var(--border); color:var(--text); padding:3px 6px; border-radius:var(--rad); font-size:12px; }
+  .pagination-page { font-size:12px; color:var(--text); font-variant-numeric:tabular-nums; }
+
   /* ── COMPARE ── */
-  .compare-grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .compare-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:16px; }
   @media(max-width:700px) { .compare-grid { grid-template-columns:1fr; } }
   .compare-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--rad); padding:16px 18px; }
   .compare-panel-title { font-size:13px; font-weight:700; margin-bottom:12px; color:var(--blue); border-bottom:1px solid var(--border); padding-bottom:8px; }
@@ -474,12 +484,34 @@
     </div>
   </details>
 
+  <!-- Collection comparison -->
+  <details id="compareDetails" style="margin-top:24px">
+    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
+      <span style="font-size:10px">▶</span>
+      Collection Comparison
+      <span style="font-size:10px;color:var(--border);font-weight:400;text-transform:none;letter-spacing:0">— compare quality metrics across collections side-by-side</span>
+    </summary>
+    <div style="margin-top:12px">
+      <div id="cmpSelectors" style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <span style="font-size:12px;color:var(--muted);font-weight:600">A:</span>
+        <select class="col-select" data-cmp-slot style="min-width:180px"><option value="">Select collection…</option></select>
+        <span style="font-size:12px;color:var(--muted);font-weight:600">B:</span>
+        <select class="col-select" data-cmp-slot style="min-width:180px"><option value="">Select collection…</option></select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <button class="btn" onclick="addCompareSlot()" style="font-size:11px;padding:4px 10px">+ Add Collection</button>
+        <button class="btn" onclick="doCompare()">Compare →</button>
+      </div>
+      <div id="compareResult"></div>
+    </div>
+  </details>
+
   <!-- Per-query table -->
   <div style="margin-top:28px">
     <div class="table-controls">
       <h2>Per-Query Results</h2>
       <span class="badge" id="rowBadge">—</span>
-      <input class="search-box" id="searchBox" placeholder="Search queries…" oninput="renderTable()"/>
+      <input class="search-box" id="searchBox" placeholder="Search queries…" oninput="currentPage=1;renderTable()"/>
     </div>
     <div class="table-wrap">
       <table>
@@ -511,26 +543,23 @@
         </tbody>
       </table>
     </div>
-  </div>
-
-  <!-- Collection comparison -->
-  <details id="compareDetails" style="margin-top:24px">
-    <summary style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:6px">
-      <span style="font-size:10px">▶</span>
-      Collection Comparison
-      <span style="font-size:10px;color:var(--border);font-weight:400;text-transform:none;letter-spacing:0">— compare quality metrics between two collections side-by-side</span>
-    </summary>
-    <div style="margin-top:12px">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
-        <span style="font-size:12px;color:var(--muted);font-weight:600">A:</span>
-        <select class="col-select" id="cmpSelA" style="min-width:180px"><option value="">Select collection A…</option></select>
-        <span style="font-size:12px;color:var(--muted);font-weight:600">B:</span>
-        <select class="col-select" id="cmpSelB" style="min-width:180px"><option value="">Select collection B…</option></select>
-        <button class="btn" onclick="doCompare()">Compare →</button>
+    <div class="pagination" id="pagination">
+      <div class="pagination-info" id="paginationInfo"></div>
+      <div class="pagination-controls">
+        <label style="font-size:12px;color:var(--muted)">Per page:</label>
+        <select class="page-size-select" id="pageSizeSelect" onchange="onPageSizeChange()">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="0">All</option>
+        </select>
+        <button onclick="goPage(-1)" id="prevBtn" disabled>← Prev</button>
+        <span class="pagination-page" id="pageLabel">1 / 1</span>
+        <button onclick="goPage(1)" id="nextBtn" disabled>Next →</button>
       </div>
-      <div id="compareResult"></div>
     </div>
-  </details>
+  </div>
 
 </div><!-- /main -->
 
@@ -587,6 +616,8 @@ let sortKey    = '#';
 let sortAsc    = true;
 let refreshTimer = null;
 let countdown    = 30;
+let pageSize   = 10;
+let currentPage = 1;
 
 // ─────────────────────────────────────────────
 // Collections
@@ -803,19 +834,29 @@ function renderTable() {
     return sortAsc ? cmp : -cmp;
   });
 
-  document.getElementById('rowBadge').textContent = rows.length + ' queries';
+  const totalFiltered = rows.length;
+  document.getElementById('rowBadge').textContent = totalFiltered + ' queries';
   const tbody = document.getElementById('tbody');
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="7" class="placeholder">No results${search ? ' matching "'+esc(search)+'"' : ''}</td></tr>`;
+    updatePagination(0, 0, 0);
     return;
   }
 
-  tbody.innerHTML = rows.map((r, i) => {
+  // pagination
+  const ps = pageSize > 0 ? pageSize : totalFiltered;
+  const totalPages = Math.max(1, Math.ceil(totalFiltered / ps));
+  if (currentPage > totalPages) currentPage = totalPages;
+  if (currentPage < 1) currentPage = 1;
+  const startIdx = (currentPage - 1) * ps;
+  const pageRows = rows.slice(startIdx, startIdx + ps);
+
+  tbody.innerHTML = pageRows.map((r, i) => {
     const ts  = (r.createdAt||'').replace('T',' ').substring(0,23);
     const idx = allRows.findIndex(x => x.id === r.id);
     return `<tr class="clickable" onclick="openModal(${idx})">
-      <td class="td-num td-muted" style="min-width:36px">${i+1}</td>
+      <td class="td-num td-muted" style="min-width:36px">${startIdx + i + 1}</td>
       <td class="query-wrap"><div class="query-text" title="${esc(r.query)}">${esc(r.query)}</div></td>
       <td class="td-num"><span class="pill ${pillClass(r.llmOverall)}">${fmt(r.llmOverall)}</span></td>
       <td class="td-num"><span class="pill ${pillClass(r.llmFaithfulness)}">${fmt(r.llmFaithfulness)}</span></td>
@@ -824,6 +865,29 @@ function renderTable() {
       <td class="td-muted" style="white-space:nowrap;font-size:11px">${ts}</td>
     </tr>`;
   }).join('');
+
+  updatePagination(totalFiltered, currentPage, totalPages);
+}
+
+function updatePagination(total, page, totalPages) {
+  const ps = pageSize > 0 ? pageSize : total;
+  const from = total > 0 ? (page - 1) * ps + 1 : 0;
+  const to   = Math.min(page * ps, total);
+  document.getElementById('paginationInfo').textContent = total > 0 ? `Showing ${from}–${to} of ${total}` : '';
+  document.getElementById('pageLabel').textContent = `${page} / ${totalPages || 1}`;
+  document.getElementById('prevBtn').disabled = page <= 1;
+  document.getElementById('nextBtn').disabled = page >= totalPages;
+}
+
+function goPage(delta) {
+  currentPage += delta;
+  renderTable();
+}
+
+function onPageSizeChange() {
+  pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
+  currentPage = 1;
+  renderTable();
 }
 
 // ─────────────────────────────────────────────
@@ -1011,73 +1075,115 @@ function renderDiagCards(m) {
 // ─────────────────────────────────────────────
 // Collection comparison
 // ─────────────────────────────────────────────
+let _cmpCollections = [];
+let _cmpSlotCounter = 0;
+
 function loadCompareCollections(cols) {
-  ['cmpSelA','cmpSelB'].forEach(id => {
-    const sel = document.getElementById(id);
-    if (!sel) return;
+  _cmpCollections = cols || [];
+  // populate existing selects
+  document.querySelectorAll('[data-cmp-slot]').forEach(sel => {
     const prev = sel.value;
-    sel.innerHTML = '<option value="">Select collection\u2026</option>';
-    (cols||[]).forEach(c => {
+    sel.innerHTML = '<option value="">Select collection…</option>';
+    _cmpCollections.forEach(c => {
       const o = document.createElement('option');
       o.value = c; o.textContent = c;
       sel.appendChild(o);
     });
-    if (prev && (cols||[]).includes(prev)) sel.value = prev;
+    if (prev && _cmpCollections.includes(prev)) sel.value = prev;
   });
 }
 
+function addCompareSlot() {
+  const container = document.getElementById('cmpSelectors');
+  _cmpSlotCounter++;
+  const letter = String.fromCharCode(65 + document.querySelectorAll('[data-cmp-slot]').length); // C, D, E…
+  const lbl = document.createElement('span');
+  lbl.style.cssText = 'font-size:12px;color:var(--muted);font-weight:600;margin-left:6px';
+  lbl.textContent = letter + ':';
+  const sel = document.createElement('select');
+  sel.className = 'col-select';
+  sel.setAttribute('data-cmp-slot', '');
+  sel.style.minWidth = '180px';
+  sel.innerHTML = '<option value="">Select collection…</option>';
+  _cmpCollections.forEach(c => {
+    const o = document.createElement('option');
+    o.value = c; o.textContent = c;
+    sel.appendChild(o);
+  });
+  const rmBtn = document.createElement('button');
+  rmBtn.textContent = '✕';
+  rmBtn.style.cssText = 'background:none;border:1px solid var(--border);border-radius:var(--rad);color:var(--muted);cursor:pointer;font-size:11px;padding:2px 6px;margin-left:-4px';
+  rmBtn.onclick = () => { lbl.remove(); sel.remove(); rmBtn.remove(); };
+  container.appendChild(lbl);
+  container.appendChild(sel);
+  container.appendChild(rmBtn);
+}
+
 async function doCompare() {
-  const a   = (document.getElementById('cmpSelA')||{}).value || '';
-  const b   = (document.getElementById('cmpSelB')||{}).value || '';
+  const selects = document.querySelectorAll('[data-cmp-slot]');
+  const selected = Array.from(selects).map(s => s.value).filter(v => v);
+  const unique = [...new Set(selected)];
   const out = document.getElementById('compareResult');
-  if (!a || !b) {
-    out.innerHTML = '<div style="color:var(--yellow);font-size:12px;padding:8px 0">\u26a0 Select two collections to compare.</div>';
+  if (unique.length < 2) {
+    out.innerHTML = '<div style="color:var(--yellow);font-size:12px;padding:8px 0">\u26a0 Select at least 2 different collections to compare.</div>';
     return;
   }
   out.innerHTML = '<div class="placeholder" style="padding:16px">Loading comparison\u2026</div>';
   try {
-    const res  = await fetch(`/eval/v1/compare?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
-    const data = await res.json();
-    renderCompare(data);
+    // Fetch metrics for each selected collection in parallel
+    const results = await Promise.all(selected.map(async c => {
+      const res = await fetch(`/eval/v1/metrics?collection=${encodeURIComponent(c)}`);
+      const data = await res.json();
+      data._name = c;
+      return data;
+    }));
+    renderCompareMulti(results);
   } catch(e) {
     out.innerHTML = `<div style="color:var(--red);font-size:12px;padding:8px 0">Compare failed: ${esc(String(e))}</div>`;
   }
 }
 
-function renderCompare(data) {
-  const { a, b } = data;
-  const rows = [
-    { label:'Total Evals',        ga:a.totalEvals,              gb:b.totalEvals,              fmt:v=>String(v),        higher:true  },
-    { label:'Avg Overall',        ga:a.avgOverall,              gb:b.avgOverall,              fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'P25 Overall',        ga:a.p25Overall,              gb:b.p25Overall,              fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'P75 Overall',        ga:a.p75Overall,              gb:b.p75Overall,              fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Context Precision',  ga:a.avgContextPrecision,     gb:b.avgContextPrecision,     fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Context Relevance',  ga:a.avgContextRel,           gb:b.avgContextRel,           fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Faithfulness',       ga:a.avgFaithfulness,         gb:b.avgFaithfulness,         fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Claim Faithfulness', ga:a.avgLLMClaimFaithfulness, gb:b.avgLLMClaimFaithfulness, fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Answer Relevance',   ga:a.avgAnswerRel,            gb:b.avgAnswerRel,            fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'LLM Overall',        ga:a.avgLLMOverall,           gb:b.avgLLMOverall,           fmt:v=>v.toFixed(3),     higher:true  },
-    { label:'Hallucination %',    ga:a.hallucinationPct,        gb:b.hallucinationPct,        fmt:v=>v.toFixed(1)+'%', higher:false },
+function renderCompareMulti(collections) {
+  const metricDefs = [
+    { label:'Total Evals',        key:'totalEvals',             fmt:v=>String(v||0),         higher:true  },
+    { label:'LLM Overall',        key:'avgLLMOverall',          fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'LLM Faithfulness',   key:'avgLLMFaithfulness',     fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Claim Faithfulness', key:'avgLLMClaimFaithfulness', fmt:v=>(v||0).toFixed(3),   higher:true  },
+    { label:'LLM Ans Relevance',  key:'avgLLMAnswerRelevance',  fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'LLM Ctx Relevance',  key:'avgLLMContextRelevance', fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Embed Overall',      key:'avgOverall',             fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Ctx Precision',      key:'avgContextPrecision',    fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Ctx Relevance',      key:'avgContextRelevance',    fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Faithfulness',       key:'avgFaithfulness',        fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Answer Relevance',   key:'avgAnswerRelevance',     fmt:v=>(v||0).toFixed(3),    higher:true  },
+    { label:'Hallucination %',    key:'hallucinationPct',       fmt:v=>(v||0).toFixed(1)+'%', higher:false },
   ];
-  function panelRows(side) {
-    return rows.map(m => {
-      const val   = side === 'a' ? m.ga : m.gb;
-      const other = side === 'a' ? m.gb : m.ga;
-      const better = m.higher ? val > other : val < other;
-      const worse  = m.higher ? val < other : val > other;
-      const clr = better ? 'var(--green)' : worse ? 'var(--red)' : 'var(--text)';
+
+  // For each metric, find the best value across collections
+  const bestVals = {};
+  metricDefs.forEach(m => {
+    const vals = collections.map(c => c[m.key]||0);
+    bestVals[m.key] = m.higher ? Math.max(...vals) : Math.min(...vals);
+  });
+
+  function panelRows(col) {
+    return metricDefs.map(m => {
+      const val = col[m.key]||0;
+      const best = bestVals[m.key];
+      const isBest = collections.length > 1 && val === best;
+      const isWorst = collections.length > 1 && (m.higher ? val < best : val > best);
+      const clr = isBest ? 'var(--green)' : isWorst ? 'var(--red)' : 'var(--text)';
       return `<div class="compare-row"><span class="compare-label">${m.label}</span><span class="compare-val" style="color:${clr}">${m.fmt(val)}</span></div>`;
     }).join('');
   }
+
   document.getElementById('compareResult').innerHTML = `<div class="compare-grid">
-    <div class="compare-panel">
-      <div class="compare-panel-title">A \u2014 ${esc(a.name)}<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">(${a.totalEvals} evals)</span></div>
-      ${panelRows('a')}
-    </div>
-    <div class="compare-panel">
-      <div class="compare-panel-title">B \u2014 ${esc(b.name)}<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">(${b.totalEvals} evals)</span></div>
-      ${panelRows('b')}
-    </div>
+    ${collections.map((col, i) => `
+      <div class="compare-panel">
+        <div class="compare-panel-title">${esc(col._name)}<span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:8px">(${col.totalEvals||0} evals)</span></div>
+        ${panelRows(col)}
+      </div>
+    `).join('')}
   </div>`;
 }
 
