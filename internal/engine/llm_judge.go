@@ -95,7 +95,7 @@ func (j *LLMJudge) Judge(ctx context.Context, req EvalRequest) (*LLMJudgeResult,
 func buildJudgePrompt(req EvalRequest) string {
 	var chunksBuilder strings.Builder
 	for i, c := range req.Chunks {
-		chunksBuilder.WriteString(fmt.Sprintf("[Chunk %d] %s\n", i+1, truncate(c.Text, 400)))
+		chunksBuilder.WriteString(fmt.Sprintf("[Chunk %d] %s\n", i+1, truncate(c.Text, 10000)))
 	}
 
 	refSection, refTask, refJSONField := "", "", ""
