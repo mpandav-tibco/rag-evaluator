@@ -17,7 +17,7 @@ eval:
   workerCount: 2
   channelBuffer: 1000
   sampleRate: 1.0
-  faithfulnessThreshold: 0.75
+  faithfulnessThreshold: 0.60
   aggregationMode: mean  # mean | min | max
   llmJudge:
     enabled: true

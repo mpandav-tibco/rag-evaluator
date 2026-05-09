@@ -34,6 +34,7 @@ type EvalResult struct {
 	TraceID           string
 	Collection        string
 	Query             string
+	Answer            string
 	ContextRelevance  float64 // mean cosine(query, chunk[i])
 	Faithfulness      float64 // % of answer sentences grounded in chunks
 	AnswerRelevance   float64 // cosine(query, answer)
@@ -141,6 +142,7 @@ func (s *Scorer) Score(ctx context.Context, req EvalRequest) (*EvalResult, error
 		TraceID:           req.TraceID,
 		Collection:        req.Collection,
 		Query:             req.Query,
+		Answer:            req.Answer,
 		ContextRelevance:  round2(contextRel),
 		ContextPrecision:  round2(contextPrec),
 		Faithfulness:      round2(faithfulness),

@@ -89,7 +89,7 @@ Requires [Docker](https://docs.docker.com/get-docker/) and Ollama running on the
 ```sh
 # Pull required Ollama models on the host first
 ollama pull nomic-embed-text
-ollama pull qwen2.5:14b
+ollama pull llama3.1:8b
 
 # Start rageval (builds image if not already built)
 docker compose up -d

@@ -542,6 +542,10 @@
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
+      <div class="modal-section" id="modalAnswerSection" style="display:none">
+        <div class="modal-section-title">RAG Answer</div>
+        <div class="modal-reasoning" id="modalAnswer"></div>
+      </div>
       <div class="modal-section">
         <div class="modal-section-title">LLM Judge Scores — primary quality signal</div>
         <div class="modal-scores" id="modalLLMScores"></div>
@@ -837,6 +841,15 @@ function openModal(idx) {
   const r = allRows[idx];
   if (!r) return;
   document.getElementById('modalQuery').textContent = r.query;
+
+  const answerSec = document.getElementById('modalAnswerSection');
+  const answerEl  = document.getElementById('modalAnswer');
+  if (r.answer) {
+    answerEl.textContent = r.answer;
+    answerSec.style.display = '';
+  } else {
+    answerSec.style.display = 'none';
+  }
 
   document.getElementById('modalLLMScores').innerHTML = [
     scoreItem('Overall', r.llmOverall, true),

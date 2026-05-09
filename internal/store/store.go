@@ -74,6 +74,7 @@ type ResultRow struct {
 	TraceID              string   `json:"traceId"`
 	Collection           string   `json:"collection"`
 	Query                string   `json:"query"`
+	Answer               string   `json:"answer"`
 	OverallScore         float64  `json:"overallScore"`
 	ContextRelevance     float64  `json:"contextRelevance"`
 	ContextPrecision     float64  `json:"contextPrecision"`
@@ -84,6 +85,7 @@ type ResultRow struct {
 	LLMFaithfulness      float64  `json:"llmFaithfulness"`
 	LLMClaimFaithfulness float64  `json:"llmClaimFaithfulness"`
 	LLMContextRel        float64  `json:"llmContextRelevance"`
+	LLMAnswerRel         float64  `json:"llmAnswerRelevance"`
 	LLMReasoning         string   `json:"llmReasoning"`
 	HasFlags             bool     `json:"hasFlags"`
 	Flags                []string `json:"flags"`

@@ -75,6 +75,7 @@ CREATE INDEX IF NOT EXISTS idx_created_at ON eval_results(created_at);
 		{"context_precision", "REAL"},
 		{"context_recall", "REAL"},
 		{"llm_claim_faithfulness", "REAL"},
+		{"answer", "TEXT"},
 	}
 	existing := map[string]bool{}
 	rows, err := db.Query(`PRAGMA table_info(eval_results)`)
@@ -107,14 +108,14 @@ func (s *SQLiteStore) WriteResult(ctx context.Context, r *engine.EvalResult) err
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.000")
 	_, err := s.db.ExecContext(ctx, `
 INSERT INTO eval_results
-  (created_at, pipeline_id, platform, trace_id, collection, query,
+  (created_at, pipeline_id, platform, trace_id, collection, query, answer,
    context_relevance, faithfulness, answer_relevance,
    chunk_utilization, answer_correctness, overall_score, flags,
    llm_ctx_relevance, llm_faithfulness, llm_ans_relevance, llm_overall, llm_reasoning,
    context_precision, context_recall, llm_claim_faithfulness)
-VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		now,
-		r.PipelineID, r.Platform, r.TraceID, r.Collection, r.Query,
+		r.PipelineID, r.Platform, r.TraceID, r.Collection, r.Query, r.Answer,
 		r.ContextRelevance, r.Faithfulness, r.AnswerRelevance,
 		r.ChunkUtilization, r.AnswerCorrectness, r.OverallScore,
 		string(flags),
@@ -244,11 +245,13 @@ func (s *SQLiteStore) QueryResults(ctx context.Context, q ResultsQuery) ([]Resul
 	args = append(args, q.Limit)
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 SELECT id, created_at, COALESCE(trace_id,''), COALESCE(collection,''), COALESCE(query,''),
+       COALESCE(answer,''),
        COALESCE(overall_score,0), COALESCE(context_relevance,0),
        COALESCE(context_precision,0), COALESCE(context_recall,0),
        COALESCE(faithfulness,0), COALESCE(answer_relevance,0),
        COALESCE(llm_overall,0), COALESCE(llm_faithfulness,0),
        COALESCE(llm_claim_faithfulness,0), COALESCE(llm_ctx_relevance,0),
+       COALESCE(llm_ans_relevance,0),
        COALESCE(llm_reasoning,''), COALESCE(flags,'[]')
 FROM eval_results WHERE %s ORDER BY created_at %s LIMIT ?`, clause, order), args...)
 	if err != nil {
@@ -261,11 +264,13 @@ FROM eval_results WHERE %s ORDER BY created_at %s LIMIT ?`, clause, order), args
 		var flagsJSON string
 		if err := rows.Scan(
 			&r.ID, &r.CreatedAt, &r.TraceID, &r.Collection, &r.Query,
+			&r.Answer,
 			&r.OverallScore, &r.ContextRelevance,
 			&r.ContextPrecision, &r.ContextRecall,
 			&r.Faithfulness, &r.AnswerRelevance,
 			&r.LLMOverall, &r.LLMFaithfulness,
 			&r.LLMClaimFaithfulness, &r.LLMContextRel,
+			&r.LLMAnswerRel,
 			&r.LLMReasoning, &flagsJSON,
 		); err != nil {
 			continue
